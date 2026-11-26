@@ -10,7 +10,7 @@ const navigation = [
   { to: '/worklogs', label: 'Jira 工時紀錄', icon: BriefcaseBusiness },
 ];
 
-type SignedInUser = { id: string; email: string; name?: string };
+type SignedInUser = { id: string; email: string; name?: string; picture?: string };
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
 function App() {
@@ -75,7 +75,7 @@ function App() {
             <span>使用說明</span>
           </div>
           <button className="account-row account-action" type="button" onClick={handleAccountClick} disabled={authLoading} aria-label={user ? '登出 Google 帳號' : '使用 Google 登入'}>
-            <span className="account-avatar">{user ? avatarLabel : 'NL'}</span>
+            <span className="account-avatar">{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : user ? avatarLabel : 'NL'}</span>
             <span className="account-copy"><strong>{user?.name || '工作帳號'}</strong><span>{user ? user.email : accountLabel}</span></span>
             <ChevronDown size={15} className="account-chevron" />
           </button>
@@ -91,7 +91,7 @@ function App() {
             <button className="icon-button" type="button" aria-label="開啟行事曆">
               <CalendarDays size={17} strokeWidth={1.8} />
             </button>
-            <button className="topbar-avatar account-action" type="button" onClick={handleAccountClick} disabled={authLoading} aria-label={user ? '登出 Google 帳號' : '使用 Google 登入'} title={user ? `${user.email}（點擊登出）` : '使用 Google 登入'}>{avatarLabel}</button>
+            <button className="topbar-avatar account-action" type="button" onClick={handleAccountClick} disabled={authLoading} aria-label={user ? '登出 Google 帳號' : '使用 Google 登入'} title={user ? `${user.email}（點擊登出）` : '使用 Google 登入'}>{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : avatarLabel}</button>
           </div>
         </header>
         <div className="page-content"><Outlet /></div>

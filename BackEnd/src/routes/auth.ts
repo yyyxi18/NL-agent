@@ -9,7 +9,7 @@ const STATE_COOKIE = 'nl_agent_oauth_state';
 const SESSION_SECONDS = 60 * 60 * 8;
 const STATE_SECONDS = 10 * 60;
 
-type Session = { sub: string; email: string; name?: string; exp: number };
+type Session = { sub: string; email: string; name?: string; picture?: string; exp: number };
 
 function oauthClient(): OAuth2Client {
   return new OAuth2Client(env.googleClientId, env.googleClientSecret, env.googleRedirectUri);
@@ -117,6 +117,7 @@ authRouter.get('/google/callback', async (req, res, next) => {
       sub: payload.sub,
       email: payload.email,
       ...(payload.name ? { name: payload.name } : {}),
+      ...(payload.picture ? { picture: payload.picture } : {}),
       exp: Date.now() + SESSION_SECONDS * 1000,
     };
     setCookie(res, SESSION_COOKIE, seal(JSON.stringify(session)), SESSION_SECONDS);
@@ -136,7 +137,7 @@ authRouter.get('/me', (req, res) => {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Sign-in required' });
     return;
   }
-  res.json({ id: session.sub, email: session.email, name: session.name });
+  res.json({ id: session.sub, email: session.email, name: session.name, picture: session.picture });
 });
 
 authRouter.post('/logout', (req, res) => {

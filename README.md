@@ -2,7 +2,7 @@
 
 NL-agent 是一個整合工程工作流程的網站。本期以 Jira 工時紀錄為核心：規劃讓使用者把 Google Calendar 工時建議與自然語言補登合併為同一份草稿，確認後再寫入 Jira。結案報告製作與 SOW 撰寫也會列在產品導覽中，目前仍是待開發項目。
 
-目前儲存庫提供可操作的前端介面預覽，以及可在本機或 AWS Lambda 執行的後端基礎。登入、Jira、Google Calendar、AI 解析與提醒尚未串接；畫面中的工時數字和行程都是示意資料，確認操作不會建立 Jira 工時。
+目前儲存庫包含 NL-agent 前端與 Express 後端。Google OAuth、Calendar 讀取、AI 行程分類、Jira 連線與工時確認流程已在開發中；Google Chat 每日提醒可在本機後端啟用。提醒排程及 OAuth token 儲存目前是本機開發實作，尚未具備 AWS 多執行個體／Lambda 所需的持久儲存與雲端排程。
 
 ## 目標與設計原則
 
@@ -17,10 +17,10 @@ NL-agent 是一個整合工程工作流程的網站。本期以 Jira 工時紀�
 | 區域 | 目前狀態 |
 | --- | --- |
 | 首頁 | 工時 Dashboard 介面預覽，資料為靜態示意內容 |
-| Jira 工時紀錄 | Calendar 建議、手動補登、草稿調整與確認流程的前端互動預覽；未連接 Jira 或 Calendar |
+| Jira 工時紀錄 | Calendar 行程建議、手動補登、草稿調整、Jira 配對與使用者確認流程 |
 | 結案報告製作、SOW 撰寫 | 導覽與待開發頁面 |
-| 後端 API | Express API 基礎與 `GET /api/v1/health` 健康檢查 |
-| 登入與外部整合 | Google 登入、Jira、Calendar、Bedrock AI、Google Chat 尚未實作 |
+| 後端 API | Express API，支援本機及 AWS Lambda API 部署 |
+| 登入與外部整合 | Google 登入、Calendar OAuth、Jira OAuth／API、Gemini 分類與本機 Google Chat 提醒排程 |
 
 ## 技術架構
 
@@ -30,9 +30,10 @@ NL-agent 是一個整合工程工作流程的網站。本期以 Jira 工時紀�
 flowchart LR
   Browser[React 前端預覽] -->|預設 API 網址| API[Express API]
   API --> Health[GET /api/v1/health]
-  API -. 尚未整合 .-> Jira[Jira Cloud]
-  API -. 尚未整合 .-> Google[Google OAuth / Calendar]
-  API -. 尚未整合 .-> Bedrock[Amazon Bedrock]
+  API --> Jira[Jira Cloud]
+  API --> Google[Google OAuth / Calendar]
+  API --> Gemini[Gemini 分類]
+  LocalScheduler[本機 16:30 排程] --> Chat[Google Chat 私訊]
 ```
 
 - **前端**：React 18、TypeScript、Vite、React Router。包含首頁、工時紀錄、結案報告及 SOW 頁面；工時頁提供 Calendar 行程示意、手動草稿、月曆與確認提示。
@@ -99,7 +100,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Vite 預設網址為 `http://localhost:5173`。`VITE_API_BASE_URL` 預設為 `http://localhost:3000/api/v1`；目前預覽頁尚未呼叫後端 API。
+Vite 預設網址為 `http://localhost:5173`。`VITE_API_BASE_URL` 預設為 `http://localhost:3000/api/v1`；Google Chat 通知的日期連結會開啟 `/#/worklogs?date=YYYY-MM-DD`。
 
 其他前端指令：
 
@@ -107,6 +108,27 @@ Vite 預設網址為 `http://localhost:5173`。`VITE_API_BASE_URL` 預設為 `ht
 npm run build
 npm run lint
 ```
+
+### Google Chat 每日工時提醒（本機開發）
+
+此排程每天於 **Asia/Taipei 16:30** 執行。它即時讀取工程師已授權的 Google Calendar，使用現有分類器判斷行程，只在 Chat 私訊列出工作行程與預估時數；私人及待確認行程名稱不會被放進通知。訊息包含 NL-agent 當日頁面連結，工時仍須工程師在網站確認後才會送到 Jira。
+
+1. 在 Google Cloud 同一個 Workspace 專案啟用 **Google Chat API**，建立 Google Chat App，設定為 HTTP endpoint，事件網址填公開 HTTPS 網址 `https://<後端網域>/api/v1/chat/events`。Google Chat 無法呼叫 `localhost`；本機測試需使用 HTTPS tunnel，正式環境使用已部署的 HTTPS API。
+2. 在 Chat App 設定中開啟 App authentication，將 audience 設為上述 endpoint URL，並把同一個 App 的 service account JSON 以 Base64 編碼後填入 `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON_BASE64`。此 service account 必須是該 Chat App 配置所使用的帳號，並可使用 `https://www.googleapis.com/auth/chat.bot` scope。
+3. 設定 `GOOGLE_CHAT_APP_AUDIENCE` 為 Chat App 中配置的完全相同 audience（通常是 endpoint URL），並將 `DAILY_REMINDER_ENABLED=true`。
+4. 確認 `FRONTEND_URL` 是工程師可瀏覽的 NL-agent 網址。開啟後端並讓它持續執行；本機排程只在後端程序運作時生效。
+5. 每位工程師先用與 NL-agent／Calendar 相同的公司 Google 帳號連接 Google Calendar，再到 Google Chat 找到並開啟 NL-agent App 私訊，傳送任意訊息完成連結。若 Calendar 在新增 Chat 提醒功能前已連線，請重新連接一次以保存帳號 Email。
+6. 16:30 後檢查 Chat 私訊。`GET /api/v1/chat/status` 可用於檢查登入使用者是否已啟用提醒並連結 DM。
+
+Base64 編碼方式（macOS）：
+
+```bash
+base64 -i /path/to/chat-service-account.json | tr -d '\\n'
+```
+
+請將輸出貼到本機 `BackEnd/.env`，不要提交 `.env` 或 service account JSON。Google Chat DM 使用 Chat App 身分發送；工程師必須先開啟 App 私訊，且公司 Workspace 的 Chat App 管理政策須允許此 App。
+
+**AWS 部署限制：**目前 SAM 範本部署的是無狀態 API Lambda，而 Calendar refresh token、Chat space 對照及去重日期存在本機加密檔案；每日排程亦由本機 Node 程序執行。直接部署到 Lambda 不會啟動 16:30 排程，也無法跨執行個體保留使用者連線。正式 AWS 版本需先把 token／Chat 對照改存 DynamoDB（建議 KMS 加密），再用 EventBridge Scheduler 以 `Asia/Taipei` 每天觸發一個提醒 Lambda；這是後續工作，不能只靠上述 env 變數完成。
 
 ## 路由
 

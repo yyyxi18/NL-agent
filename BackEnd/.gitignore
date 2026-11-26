@@ -1,6 +1,7 @@
 node_modules/
 build/
 .aws-sam/
+.local-data/
 .env
 .env.*
 !.env.example

@@ -1,6 +1,6 @@
 # NL-agent Backend
 
-Backend foundation for NL-agent. This backend currently provides a health endpoint and local/AWS execution setup; Jira, Google OAuth/Calendar, Bedrock, and worklog business endpoints are not implemented yet.
+Backend for NL-agent with Google OAuth/Calendar and optional Gemini or Bedrock event classification.
 
 ## Local development
 
@@ -44,12 +44,36 @@ Build and deploy from this directory with AWS SAM CLI after setting `AllowedOrig
 - `GET /api/v1/auth/google/callback` — validates OAuth state and Google ID token, then sets an encrypted, HttpOnly session cookie.
 - `GET /api/v1/auth/me` — returns the signed-in user's basic profile (401 when signed out).
 - `POST /api/v1/auth/logout` — clears the session cookie.
+- `GET /api/v1/calendar/google` — requests Google Calendar read-only consent for the signed-in user.
+- `GET /api/v1/calendar/status` — returns whether that user connected a calendar.
+- `GET /api/v1/calendar/events?timeMin=...&timeMax=...` — reads primary-calendar events for a date range (up to 31 days).
+- `DELETE /api/v1/calendar/connection` — revokes and removes the saved calendar connection.
+- `GET /api/v1/jira/connect` — starts Atlassian OAuth 2.0 authorization.
+- `GET /api/v1/jira/status` — returns connected Jira sites and the selected site.
+- `PUT /api/v1/jira/site` — selects an authorized Jira site by `cloudId`.
+- `GET /api/v1/jira/projects` and `GET /api/v1/jira/issues` — search projects and issues in the selected site.
+- `POST /api/v1/jira/worklogs` — creates worklogs only after the user confirms in the frontend.
+- `DELETE /api/v1/jira/connection` — revokes the Jira connection and removes local tokens.
+- `POST /api/v1/chat/events` — Google Chat App interaction endpoint; a user can link their Chat DM after connecting Calendar with the same company account.
+- `GET /api/v1/chat/status` — reports whether daily reminders are enabled and the signed-in user has linked a Chat DM.
 
 For local Google sign-in, configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_WORKSPACE_DOMAIN`, `FRONTEND_URL`, and a random `AUTH_COOKIE_SECRET` in `.env`. Register the exact redirect URI in the Google OAuth client. Start the API and open `http://localhost:3000/api/v1/auth/google`. The OAuth callback accepts only verified Google Workspace accounts whose `hd` claim matches one of the comma-separated configured domains. The cookie session lasts eight hours and is stateless; signing out clears the browser cookie but cannot revoke a copied cookie before it expires.
 
-The AWS SAM template does not yet inject these authentication settings. Before deployment, store the Google client secret and cookie secret in AWS Secrets Manager, grant the Lambda role access to them, and inject the values at runtime. Use a stable `AUTH_COOKIE_SECRET` across Lambda instances and deployments, and register the production HTTPS callback URI with Google.
+For Calendar, enable Google Calendar API in the same Google Cloud project and register `GOOGLE_CALENDAR_REDIRECT_URI` exactly in the OAuth client. The worklogs page asks for the read-only `calendar.events.readonly` scope when the user clicks Connect. Refresh tokens are stored encrypted in `.local-data/` for local development. Calendar events are shown for the current local day; when an AI provider is configured, its work/private classification is displayed for the user to review.
 
-Planned API surface (not implemented): Google session/OIDC, Jira project and issue lookup, natural-language worklog draft, draft validation and explicit confirmation, dashboard/month summary, and optional Calendar import. Define request/response schemas before implementing frontend integration.
+For Jira Cloud, create an Atlassian OAuth 2.0 (3LO) app. Register `http://localhost:3000/api/v1/jira/oauth/callback` exactly as the callback URL and add `read:jira-work`, `read:jira-user`, and `write:jira-work` scopes. The backend also requests `offline_access` so it can rotate refresh tokens. Set `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`, and `JIRA_REDIRECT_URI` in `.env`; use the NL-agent Jira connection control to authorize, select the test site, and choose a project. Jira access and refresh tokens are encrypted in `.local-data/` for local development. Lambda requires a durable encrypted store such as DynamoDB with KMS.
+
+To enable local Gemini classification, set `GEMINI_API_KEY` in `.env`; `GEMINI_MODEL_ID` defaults to `gemini-3.8-flash`. If Gemini is not configured, the backend can use Bedrock when `BEDROCK_REGION`, `BEDROCK_MODEL_ID`, and AWS SDK credentials are configured. If neither provider is configured, events still load and remain unclassified. The classifier sends only each event's title and start/end times to the configured AI provider; it does not send descriptions or locations. Classification is a suggestion and the user must review work events before adding them to drafts. Keep the Gemini key on the backend and store it in AWS Secrets Manager for deployment.
+
+## Local Google Chat daily reminder
+
+Set `DAILY_REMINDER_ENABLED=true`, `GOOGLE_CHAT_APP_AUDIENCE` to the exact audience configured for the Chat App, and `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON_BASE64` to the base64-encoded Chat App service-account JSON. Also set `FRONTEND_URL` to the web app URL. Enable the Google Chat API and configure an HTTP Chat App endpoint at `https://<public-api-host>/api/v1/chat/events`; Google Chat cannot reach `localhost`, so local interaction testing needs an HTTPS tunnel. Each engineer must connect Calendar and send a message to the NL-agent Chat App DM using the same company account. The backend stores that DM mapping and sends a daily 16:30 Asia/Taipei summary of work-classified calendar events, omitting private and uncertain event titles. The message links to that day's worklogs page; it does not submit Jira worklogs.
+
+The local scheduler runs only while `npm run dev`/`npm start` is running. The token store and DM mapping are encrypted in `.local-data/` for local development. This is not an AWS-ready scheduler: Lambda does not run the local interval and its filesystem is not durable. AWS reminders require durable encrypted storage (for example DynamoDB with KMS) and an EventBridge Scheduler target in `Asia/Taipei`, with the Chat credentials stored outside source control (for example Secrets Manager).
+
+The AWS SAM template does not yet inject these authentication settings or provide durable Calendar token storage. Before deployment, store OAuth secrets in AWS Secrets Manager, use a durable encrypted token store (for example DynamoDB with KMS), grant the Lambda role least-privilege access, and inject the settings at runtime. The local `.local-data/` token file is not suitable for Lambda. Use a stable `AUTH_COOKIE_SECRET` across Lambda instances and deployments, and register the production HTTPS callback URI with Google.
+
+The local encrypted token store is only for development. Before company deployment, implement durable token/DM mapping storage, secrets injection, and a timezone-aware cloud scheduler.
 
 ## Production readiness
 

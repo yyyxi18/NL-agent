@@ -10,9 +10,11 @@ const SESSION_SECONDS = 60 * 60 * 8;
 const STATE_SECONDS = 10 * 60;
 
 type Session = { sub: string; email: string; name?: string; picture?: string; exp: number };
+export type AuthSession = Session;
+export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 
-function oauthClient(): OAuth2Client {
-  return new OAuth2Client(env.googleClientId, env.googleClientSecret, env.googleRedirectUri);
+export function oauthClient(redirectUri = env.googleRedirectUri): OAuth2Client {
+  return new OAuth2Client(env.googleClientId, env.googleClientSecret, redirectUri);
 }
 
 function key(): Buffer {
@@ -22,14 +24,14 @@ function key(): Buffer {
   return createHash('sha256').update(env.authCookieSecret).digest();
 }
 
-function seal(value: string): string {
+export function seal(value: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key(), iv);
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString('base64url')).join('.');
 }
 
-function unseal(value: string): string | null {
+export function unseal(value: string): string | null {
   try {
     const [ivText, tagText, dataText] = value.split('.');
     if (!ivText || !tagText || !dataText) return null;
@@ -41,23 +43,35 @@ function unseal(value: string): string | null {
   }
 }
 
-function cookieValue(req: Request, name: string): string | undefined {
+export function cookieValue(req: Request, name: string): string | undefined {
   const entry = req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
   return entry ? decodeURIComponent(entry.slice(name.length + 1)) : undefined;
 }
 
-function setCookie(res: import('express').Response, name: string, value: string, maxAge: number): void {
+export function setCookie(res: import('express').Response, name: string, value: string, maxAge: number): void {
   const secure = env.appEnv === 'production' ? '; Secure' : '';
   res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`);
 }
 
-function clearCookie(res: import('express').Response, name: string): void {
+export function clearCookie(res: import('express').Response, name: string): void {
   const secure = env.appEnv === 'production' ? '; Secure' : '';
   res.append('Set-Cookie', `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`);
 }
 
 function validConfig(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret && env.googleWorkspaceDomains.length && env.authCookieSecret.length >= 32);
+}
+
+export function getAuthSession(req: Request): AuthSession | null {
+  const raw = cookieValue(req, SESSION_COOKIE);
+  const json = raw ? unseal(raw) : null;
+  if (!json) return null;
+  try {
+    const session = JSON.parse(json) as Session;
+    return session.exp > Date.now() ? session : null;
+  } catch {
+    return null;
+  }
 }
 
 authRouter.get('/google', (_req, res) => {
@@ -129,10 +143,8 @@ authRouter.get('/google/callback', async (req, res, next) => {
 });
 
 authRouter.get('/me', (req, res) => {
-  const raw = cookieValue(req, SESSION_COOKIE);
-  const json = raw ? unseal(raw) : null;
-  const session = json ? JSON.parse(json) as Session : null;
-  if (!session || session.exp < Date.now()) {
+  const session = getAuthSession(req);
+  if (!session) {
     clearCookie(res, SESSION_COOKIE);
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Sign-in required' });
     return;

@@ -48,6 +48,7 @@ app.use((_req, res) => {
 });
 
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(JSON.stringify({ level: 'error', event: 'request_error', message: error.message }));
-  res.status(500).json({ code: 'INTERNAL_SERVER_ERROR', message: 'Request failed' });
+  const status = 'status' in error && typeof error.status === 'number' && error.status >= 400 && error.status < 600 ? error.status : 500;
+  console.error(JSON.stringify({ level: 'error', event: 'request_error', errorName: error.name, status }));
+  res.status(status).json({ code: status === 500 ? 'INTERNAL_SERVER_ERROR' : 'JIRA_REQUEST_FAILED', message: status === 500 ? 'Request failed' : error.message });
 });

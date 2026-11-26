@@ -3,11 +3,13 @@ import App from '../view/App';
 import Home from '../view/Home';
 import Worklogs from '../view/Worklogs';
 import ComingSoon from '../view/ComingSoon';
+import ErrorPage from '../view/ErrorPage';
 
 export const router = createHashRouter([
   {
     path: '/',
     element: <App />,
+    errorElement: <ErrorPage />,
     children: [
       { index: true, element: <Home /> },
       { path: 'worklogs', element: <Worklogs /> },

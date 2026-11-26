@@ -5,9 +5,9 @@ import '../style/App.css';
 
 const navigation = [
   { to: '/', label: '首頁', icon: Home, end: true },
+  { to: '/worklogs', label: 'Jira 工時紀錄', icon: BriefcaseBusiness },
   { to: '/reports', label: '結案報告製作', icon: FileText, soon: true },
   { to: '/sow', label: 'SOW 撰寫', icon: PenLine, soon: true },
-  { to: '/worklogs', label: 'Jira 工時紀錄', icon: BriefcaseBusiness },
 ];
 
 type SignedInUser = { id: string; email: string; name?: string; picture?: string };

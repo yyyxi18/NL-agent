@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: NL-agent API foundation (API Gateway HTTP API + Lambda)
+
+Parameters:
+  AllowedOrigins:
+    Type: CommaDelimitedList
+    Default: http://localhost:5173
+    Description: Browser origins allowed by the API. Set the deployed site origin before production deployment.
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Timeout: 30
+    MemorySize: 512
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        APP_ENV: production
+        CORS_ORIGINS: !Join [",", !Ref AllowedOrigins]
+
+Resources:
+  NlAgentHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: v1
+      CorsConfiguration:
+        AllowOrigins: !Ref AllowedOrigins
+        AllowHeaders:
+          - authorization
+          - content-type
+          - x-csrf-token
+          - idempotency-key
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        AllowCredentials: true
+        MaxAge: 300
+
+  NlAgentApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/lambda.ts
+        Target: es2022
+        Sourcemap: true
+        Minify: false
+    Properties:
+      Handler: lambda.handler
+      CodeUri: .
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref NlAgentHttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  NlAgentApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${NlAgentApiFunction}
+      RetentionInDays: 30
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL for the NL-agent API
+    Value: !Sub https://${NlAgentHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/v1/

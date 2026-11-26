@@ -1,0 +1,31 @@
+{
+  "name": "nl-agent-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NL-agent API for Jira worklog workflows",
+  "main": "build/lambda.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "rm -rf build",
+    "build": "tsc",
+    "start": "node build/local.js",
+    "dev": "concurrently -k \"tsc --watch\" \"nodemon --watch build build/local.js\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.10",
+    "express": "^4.17.3",
+    "serverless-http": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.16",
+    "@types/node": "^22.0.0",
+    "concurrently": "^7.6.0",
+    "esbuild": "^0.28.2",
+    "nodemon": "^2.0.20",
+    "typescript": "^5.6.3"
+  }
+}

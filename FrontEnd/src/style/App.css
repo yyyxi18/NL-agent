@@ -14,6 +14,11 @@
 .help-link { display: flex; align-items: center; gap: 11px; margin: 0 0 15px; padding: 11px; color: #b9afb3; font-size: 12px; }
 .help-link:hover { color: #fff; }
 .account-row { display: flex; align-items: center; gap: 10px; padding: 12px 6px 1px; border-top: 1px solid rgba(233,240,237,.12); }
+.account-action { cursor: pointer; font: inherit; text-align: left; }
+.account-action:hover:not(:disabled) { filter: brightness(.96); }
+.account-action:focus-visible { outline: 2px solid #c98ca7; outline-offset: 3px; }
+.account-action:disabled { cursor: wait; }
+.account-row.account-action { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; }
 .account-avatar, .topbar-avatar { display: grid; flex: 0 0 auto; width: 31px; height: 31px; place-items: center; border-radius: 50%; background: #dbccd2; color: #875e70; font-size: 11px; font-weight: 700; }
 .account-copy { display: grid; gap: 3px; min-width: 0; }
 .account-copy strong { color: #d6ced1; font-size: 11px; font-weight: 600; }
@@ -30,7 +35,7 @@
 .topbar-divider { width: 1px; height: 20px; background: #cbd5cf; }
 .icon-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #606b64; cursor: pointer; }
 .icon-button:hover { background: #d9d3d6; color: var(--brand); }
-.topbar-avatar { width: 29px; height: 29px; }
+.topbar-avatar { width: 29px; height: 29px; padding: 0; border: 0; }
 .page-content { width: min(1120px, 100%); margin: 0 auto; padding: 37px 42px 48px; }
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 27px; }
 .eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #67756c; font-size: 11px; font-weight: 500; }

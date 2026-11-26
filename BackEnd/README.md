@@ -40,6 +40,14 @@ Build and deploy from this directory with AWS SAM CLI after setting `AllowedOrig
 ## Current API
 
 - `GET /api/v1/health` — basic health response.
+- `GET /api/v1/auth/google` — starts Google OpenID Connect sign-in.
+- `GET /api/v1/auth/google/callback` — validates OAuth state and Google ID token, then sets an encrypted, HttpOnly session cookie.
+- `GET /api/v1/auth/me` — returns the signed-in user's basic profile (401 when signed out).
+- `POST /api/v1/auth/logout` — clears the session cookie.
+
+For local Google sign-in, configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_WORKSPACE_DOMAIN`, `FRONTEND_URL`, and a random `AUTH_COOKIE_SECRET` in `.env`. Register the exact redirect URI in the Google OAuth client. Start the API and open `http://localhost:3000/api/v1/auth/google`. The OAuth callback accepts only verified Google Workspace accounts whose `hd` claim matches one of the comma-separated configured domains. The cookie session lasts eight hours and is stateless; signing out clears the browser cookie but cannot revoke a copied cookie before it expires.
+
+The AWS SAM template does not yet inject these authentication settings. Before deployment, store the Google client secret and cookie secret in AWS Secrets Manager, grant the Lambda role access to them, and inject the values at runtime. Use a stable `AUTH_COOKIE_SECRET` across Lambda instances and deployments, and register the production HTTPS callback URI with Google.
 
 Planned API surface (not implemented): Google session/OIDC, Jira project and issue lookup, natural-language worklog draft, draft validation and explicit confirmation, dashboard/month summary, and optional Calendar import. Define request/response schemas before implementing frontend integration.
 

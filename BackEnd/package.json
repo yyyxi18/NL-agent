@@ -17,6 +17,7 @@
     "cors": "^2.8.5",
     "dotenv": "^18.0.10",
     "express": "^4.17.3",
+    "google-auth-library": "^11.3.4",
     "serverless-http": "^4.0.0"
   },
   "devDependencies": {

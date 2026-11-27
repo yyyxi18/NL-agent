@@ -5,11 +5,13 @@ import { clearCookie, cookieValue, getAuthSession, seal, setCookie, unseal } fro
 import { exchangeJiraCode, getAccessibleJiraSites, jiraApi, jiraConfigured, JiraRequestError, revokeJiraToken } from '../services/jiraClient';
 import { getJiraConnection, removeJiraConnection, saveJiraConnection } from '../services/jiraTokenStore';
 import { suggestJiraIssues } from '../services/eventClassifier';
+import { issueWorklogs, jiraAccountId, listJiraWorklogs } from '../services/jiraWorklogs';
 
 export const jiraRouter = Router();
 const STATE_COOKIE = 'nl_agent_jira_oauth_state';
 const STATE_TTL_SECONDS = 10 * 60;
 const OAUTH_SCOPES = ['read:jira-work', 'read:jira-user', 'write:jira-work', 'offline_access'];
+const PROJECT_CREATION_SCOPE = 'manage:jira-configuration';
 type JiraOAuthState = { state: string; userId: string; expiresAt: number };
 
 function frontendResult(key: string, value: string): string {
@@ -37,7 +39,7 @@ jiraRouter.get('/connect', (req, res) => {
   const params = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: env.jiraClientId,
-    scope: OAUTH_SCOPES.join(' '),
+    scope: [...OAUTH_SCOPES, ...(req.query.project_admin === '1' ? [PROJECT_CREATION_SCOPE] : [])].join(' '),
     redirect_uri: env.jiraRedirectUri,
     state,
     response_type: 'code',
@@ -144,6 +146,70 @@ jiraRouter.get('/projects', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+jiraRouter.post('/projects', async (req, res, next) => {
+  const userId = authRequired(req, res);
+  if (!userId) return;
+  const { name, key, cloudId } = req.body ?? {};
+  const projectName = typeof name === 'string' ? name.trim() : '';
+  const projectKey = typeof key === 'string' ? key.trim().toUpperCase() : '';
+  if (!projectName || projectName.length > 80 || !/^[A-Z][A-Z0-9]{1,9}$/.test(projectKey)
+    || typeof cloudId !== 'string' || !cloudId) {
+    res.status(400).json({ code: 'INVALID_PROJECT', message: 'Enter a name and a 2–10 character project key starting with a letter' });
+    return;
+  }
+  try {
+    const { sites, connection } = await getAccessibleJiraSites(userId);
+    if (connection.selectedCloudId !== cloudId) throw new JiraRequestError(409, 'The selected Jira site changed');
+    const site = sites.find((candidate) => candidate.id === cloudId);
+    if (!site?.scopes?.includes(PROJECT_CREATION_SCOPE)) {
+      res.status(403).json({ code: 'JIRA_PROJECT_CONSENT_REQUIRED', message: 'Authorize project creation on this Jira site' });
+      return;
+    }
+    const leadAccountId = await jiraAccountId(userId, cloudId);
+    const result = await jiraApi(userId, '/rest/api/3/project', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: projectName, key: projectKey, leadAccountId, assigneeType: 'UNASSIGNED',
+        projectTypeKey: 'business',
+        projectTemplateKey: 'com.atlassian.jira-core-project-templates:jira-core-simplified-task-tracking',
+      }),
+    }, cloudId) as { id: number; key: string };
+    res.status(201).json({ project: { id: String(result.id), key: result.key, name: projectName } });
+  } catch (error) {
+    if (error instanceof JiraRequestError && error.status === 403) {
+      res.status(403).json({ code: 'JIRA_ADMIN_REQUIRED', message: 'The Jira account needs the Administer Jira global permission' });
+      return;
+    }
+    next(error);
+  }
+});
+
+jiraRouter.get('/issues/suggestions', async (req, res, next) => {
+  const userId = authRequired(req, res);
+  if (!userId) return;
+  const { cloudId, projectKey, query } = req.query;
+  if (typeof cloudId !== 'string' || !cloudId || typeof projectKey !== 'string' || !/^[A-Z][A-Z0-9_]{0,19}$/i.test(projectKey)
+    || typeof query !== 'string' || !query.trim()) {
+    res.status(400).json({ code: 'INVALID_ISSUE_QUERY', message: 'Choose a Jira project and enter a search term' });
+    return;
+  }
+  const key = projectKey.toUpperCase();
+  try {
+    const params = new URLSearchParams({ query: query.trim().slice(0, 120), currentJQL: 'project = "' + key + '"' });
+    const result = await jiraApi(userId, '/rest/api/3/issue/picker?' + params, {}, cloudId) as {
+      sections: Array<{ issues?: Array<{ id: number; key: string; summaryText?: string }> }>;
+    };
+    const issues = new Map<string, { key: string; summary: string }>();
+    for (const section of result.sections) {
+      for (const issue of section.issues ?? []) {
+        if (!issue.key.toUpperCase().startsWith(key + '-')) continue;
+        issues.set(issue.key, { key: issue.key, summary: issue.summaryText || issue.key });
+      }
+    }
+    res.json({ issues: [...issues.values()].slice(0, 8) });
+  } catch (error) { next(error); }
+});
+
 jiraRouter.get('/issues', async (req, res, next) => {
   const userId = authRequired(req, res);
   if (!userId) return;
@@ -235,7 +301,7 @@ jiraRouter.post('/issues/match', async (req, res, next) => {
 jiraRouter.post('/issues', async (req, res, next) => {
   const userId = authRequired(req, res);
   if (!userId) return;
-  const { projectKey, summary } = req.body ?? {};
+  const { projectKey, summary, cloudId } = req.body ?? {};
   if (typeof projectKey !== 'string' || !/^[A-Z][A-Z0-9_]{1,19}$/i.test(projectKey)
     || typeof summary !== 'string' || !summary.trim() || summary.length > 255) {
     res.status(400).json({ code: 'INVALID_ISSUE', message: 'Choose a project and provide an issue title' });
@@ -245,8 +311,34 @@ jiraRouter.post('/issues', async (req, res, next) => {
     const result = await jiraApi(userId, '/rest/api/3/issue', {
       method: 'POST',
       body: JSON.stringify({ fields: { project: { key: projectKey }, summary: summary.trim(), issuetype: { name: 'Task' } } }),
-    }) as { id?: string; key?: string; self?: string };
+    }, cloudId) as { id?: string; key?: string; self?: string };
     res.status(201).json({ id: result.id, key: result.key, self: result.self });
+  } catch (error) { next(error); }
+});
+
+type WorklogEntry = { clientId?: number; issueKey: string; started: string; timeSpentSeconds: number; comment: string };
+const worklogSubmissions = new Map<string, Promise<void>>();
+
+function validDateKey(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+jiraRouter.get('/worklogs', async (req, res, next) => {
+  const userId = authRequired(req, res);
+  if (!userId) return;
+  const { from, to, cloudId, issues } = req.query;
+  const knownKeys = typeof issues === 'string' ? [...new Set(issues.split(','))] : [];
+  if (!validDateKey(from) || !validDateKey(to) || to <= from || Date.parse(to) - Date.parse(from) > 40 * 86400000
+    || typeof cloudId !== 'string' || !cloudId || knownKeys.length > 50
+    || knownKeys.some((key) => !/^[A-Z][A-Z0-9_]*-\d+$/.test(key))) {
+    res.status(400).json({ code: 'INVALID_RANGE', message: 'Choose a Jira site and a date range of up to 40 days' });
+    return;
+  }
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json({ worklogs: await listJiraWorklogs(userId, from, to, cloudId, knownKeys) });
   } catch (error) { next(error); }
 });
 
@@ -259,7 +351,7 @@ jiraRouter.post('/worklogs', async (req, res, next) => {
     return;
   }
   const invalid = entries.some((entry: Record<string, unknown>) =>
-    typeof entry.issueKey !== 'string' || !/^[A-Z][A-Z0-9_]+-\d+$/i.test(entry.issueKey)
+    !entry || typeof entry.issueKey !== 'string' || !/^[A-Z][A-Z0-9_]*-\d+$/i.test(entry.issueKey)
     || typeof entry.started !== 'string' || !Number.isFinite(Date.parse(entry.started))
     || typeof entry.timeSpentSeconds !== 'number' || !Number.isInteger(entry.timeSpentSeconds) || entry.timeSpentSeconds < 60 || entry.timeSpentSeconds > 86400
     || typeof entry.comment !== 'string' || !entry.comment.trim() || entry.comment.length > 1000);
@@ -268,26 +360,46 @@ jiraRouter.post('/worklogs', async (req, res, next) => {
     return;
   }
 
-  try {
-    const results: Array<{ clientId?: number; issueKey: string; ok: boolean; message?: string }> = [];
-    for (const entry of entries as Array<{ clientId?: number; issueKey: string; started: string; timeSpentSeconds: number; comment: string }>) {
+  const queued = worklogSubmissions.get(userId) ?? Promise.resolve();
+  const submit = queued.then(async () => {
+    const connection = await getJiraConnection(userId);
+    const cloudId = connection?.selectedCloudId;
+    if (!cloudId || (req.body.cloudId !== undefined && req.body.cloudId !== cloudId)) {
+      throw new JiraRequestError(409, 'Choose the active Jira site before submitting');
+    }
+    const accountId = await jiraAccountId(userId, cloudId);
+    const results: Array<{ clientId?: number; issueKey: string; ok: boolean; duplicate?: boolean; message?: string }> = [];
+    for (const entry of entries as WorklogEntry[]) {
+      const issueKey = entry.issueKey.toUpperCase();
+      const result = { clientId: entry.clientId, issueKey };
       try {
-        await jiraApi(userId, `/rest/api/3/issue/${encodeURIComponent(entry.issueKey)}/worklog`, {
+        const minute = Math.floor(Date.parse(entry.started) / 60000) * 60000;
+        const existing = await issueWorklogs(userId, { key: issueKey }, accountId, minute, minute + 60000, cloudId);
+        if (existing.some((row) => row.timeSpentSeconds === entry.timeSpentSeconds
+          && row.comment.trim().replace(/\s+/g, ' ').toLowerCase() === entry.comment.trim().replace(/\s+/g, ' ').toLowerCase())) {
+          results.push({ ...result, ok: true, duplicate: true });
+          continue;
+        }
+        await jiraApi(userId, '/rest/api/3/issue/' + encodeURIComponent(issueKey) + '/worklog', {
           method: 'POST',
           body: JSON.stringify({
             started: new Date(entry.started).toISOString().replace(/Z$/, '+0000'),
             timeSpentSeconds: entry.timeSpentSeconds,
             comment: { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: entry.comment }] }] },
           }),
-        });
-        results.push({ ...(typeof entry.clientId === 'number' ? { clientId: entry.clientId } : {}), issueKey: entry.issueKey, ok: true });
+        }, cloudId);
+        results.push({ ...result, ok: true });
       } catch (error) {
-        results.push({ ...(typeof entry.clientId === 'number' ? { clientId: entry.clientId } : {}), issueKey: entry.issueKey, ok: false, message: error instanceof JiraRequestError ? error.message : 'Jira request failed' });
+        results.push({ ...result, ok: false, message: error instanceof JiraRequestError ? error.message : 'Jira request failed' });
       }
     }
     const failedCount = results.filter((result) => !result.ok).length;
-    res.status(failedCount === 0 ? 201 : failedCount === results.length ? 502 : 207).json({ results });
-  } catch (error) { next(error); }
+    res.status(failedCount === 0 ? (results.every((result) => result.duplicate) ? 200 : 201) : failedCount === results.length ? 502 : 207).json({ results });
+  });
+  const tail = submit.then(() => undefined, () => undefined);
+  worklogSubmissions.set(userId, tail);
+  try { await submit; } catch (error) { next(error); }
+  finally { if (worklogSubmissions.get(userId) === tail) worklogSubmissions.delete(userId); }
 });
 
 jiraRouter.delete('/connection', async (req, res, next) => {

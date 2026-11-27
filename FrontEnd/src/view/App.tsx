@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
-import { BriefcaseBusiness, CalendarDays, ChevronDown, CircleHelp, FileText, Home, PenLine, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, ChevronDown, CircleHelp, FileText, Home, LogOut, PenLine, Sparkles } from 'lucide-react';
 import '../style/App.css';
 
 const navigation = [
@@ -17,6 +17,9 @@ function App() {
   const location = useLocation();
   const [user, setUser] = useState<SignedInUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [accountMenuFrom, setAccountMenuFrom] = useState<'sidebar' | 'topbar' | null>(null);
+  const sidebarMenuRef = useRef<HTMLDivElement>(null);
+  const topbarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/auth/me`, { credentials: 'include' })
@@ -26,11 +29,28 @@ function App() {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  const handleAccountClick = async () => {
+  useEffect(() => {
+    if (!accountMenuFrom) return;
+    const ref = accountMenuFrom === 'sidebar' ? sidebarMenuRef : topbarMenuRef;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setAccountMenuFrom(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [accountMenuFrom]);
+
+  const handleAccountClick = (from: 'sidebar' | 'topbar') => {
     if (!user) {
       window.location.assign(`${API_BASE_URL}/auth/google`);
       return;
     }
+    setAccountMenuFrom((prev) => prev === from ? null : from);
+  };
+
+  const handleLogout = async () => {
+    setAccountMenuFrom(null);
     try {
       await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
     } finally {
@@ -74,11 +94,24 @@ function App() {
             <CircleHelp size={17} strokeWidth={1.8} />
             <span>使用說明</span>
           </div>
-          <button className="account-row account-action" type="button" onClick={handleAccountClick} disabled={authLoading} aria-label={user ? '登出 Google 帳號' : '使用 Google 登入'}>
-            <span className="account-avatar">{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : user ? avatarLabel : 'NL'}</span>
-            <span className="account-copy"><strong>{user?.name || '工作帳號'}</strong><span>{user ? user.email : accountLabel}</span></span>
-            <ChevronDown size={15} className="account-chevron" />
-          </button>
+          <div className="avatar-menu-wrap avatar-menu-wrap--sidebar" ref={sidebarMenuRef}>
+            <button className="account-row account-action" type="button" onClick={() => handleAccountClick('sidebar')} disabled={authLoading} aria-label={user ? '帳號選單' : '使用 Google 登入'}>
+              <span className="account-avatar">{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : user ? avatarLabel : 'NL'}</span>
+              <span className="account-copy"><strong>{user?.name || '工作帳號'}</strong><span>{user ? user.email : accountLabel}</span></span>
+              <ChevronDown size={15} className="account-chevron" />
+            </button>
+            {accountMenuFrom === 'sidebar' && user && (
+              <div className="account-menu account-menu--up">
+                <div className="account-menu-info">
+                  <span className="account-menu-name">{user.name || '使用者'}</span>
+                  <span className="account-menu-email">{user.email}</span>
+                </div>
+                <button className="account-menu-item" type="button" onClick={() => void handleLogout()}>
+                  <LogOut size={15} />登出
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -88,10 +121,20 @@ function App() {
           <div className="topbar-right">
             <span className="preview-status"><i />介面預覽</span>
             <span className="topbar-divider" />
-            <button className="icon-button" type="button" aria-label="開啟行事曆">
-              <CalendarDays size={17} strokeWidth={1.8} />
-            </button>
-            <button className="topbar-avatar account-action" type="button" onClick={handleAccountClick} disabled={authLoading} aria-label={user ? '登出 Google 帳號' : '使用 Google 登入'} title={user ? `${user.email}（點擊登出）` : '使用 Google 登入'}>{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : avatarLabel}</button>
+<div className="avatar-menu-wrap" ref={topbarMenuRef}>
+              <button className="topbar-avatar account-action" type="button" onClick={() => handleAccountClick('topbar')} disabled={authLoading} aria-label={user ? '帳號選單' : '使用 Google 登入'} title={user ? user.email : '使用 Google 登入'}>{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : avatarLabel}</button>
+              {accountMenuFrom === 'topbar' && user && (
+                <div className="account-menu">
+                  <div className="account-menu-info">
+                    <span className="account-menu-name">{user.name || '使用者'}</span>
+                    <span className="account-menu-email">{user.email}</span>
+                  </div>
+                  <button className="account-menu-item" type="button" onClick={() => void handleLogout()}>
+                    <LogOut size={15} />登出
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <div className="page-content"><Outlet /></div>

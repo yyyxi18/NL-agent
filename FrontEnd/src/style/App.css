@@ -37,6 +37,15 @@
 .icon-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #606b64; cursor: pointer; }
 .icon-button:hover { background: #d9d3d6; color: var(--brand); }
 .topbar-avatar { width: 29px; height: 29px; padding: 0; border: 0; }
+.avatar-menu-wrap { position: relative; }
+.account-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 220px; border: 1px solid #cbd5cf; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; }
+.account-menu-info { display: grid; gap: 2px; padding: 14px 16px 12px; border-bottom: 1px solid #e8ece9; }
+.account-menu-name { color: #1f161a; font-size: 14px; font-weight: 600; }
+.account-menu-email { color: #7f8982; font-size: 13px; }
+.account-menu-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 16px; border: 0; background: transparent; color: #605358; font-size: 14px; cursor: pointer; }
+.account-menu-item:hover { background: #f4f0f2; color: #c92279; }
+.account-menu--up { top: auto; bottom: calc(100% + 8px); right: auto; left: 0; }
+.avatar-menu-wrap--sidebar { position: relative; }
 .page-content { width: 100%; max-width: 1120px; margin: 0 auto; padding: 37px 42px 48px; }
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 27px; }
 .eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #67756c; font-size: 15px; font-weight: 500; }

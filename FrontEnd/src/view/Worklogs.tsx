@@ -38,13 +38,6 @@ function formatCalendarEvent(event: CalendarApiEvent): CalendarEvent {
   return { id: event.id, time: `${clock.format(start)} – ${clock.format(end)}`, title: event.summary, project: '', started: event.start, hours, confidence, skipReason: event.reason, reason: event.reason };
 }
 
-const previewStarted = (hour: number) => new Date(2026, 10, 26, hour, 0, 0).toISOString();
-const initialDrafts: Draft[] = [
-  { id: 11, project: '待選票卡', hours: 1, started: previewStarted(9), summary: 'Sprint Planning', source: 'Calendar' },
-  { id: 12, project: '待選票卡', hours: 1.5, started: previewStarted(10), summary: 'API Review', source: 'Calendar' },
-  { id: 13, project: '待選票卡', hours: 5.5, started: previewStarted(13), summary: '開發與測試', source: '手動補登' },
-];
-
 type DayWorklog = { project: string; hours: number; summary: string; status?: string };
 
 // 2026 台灣國定假日 (11月沒有國定假日，加幾個示意)
@@ -63,27 +56,6 @@ const holidays: Record<string, string> = {
   '2026-09-25': '中秋節',
   '2026-10-10': '國慶日',
   '2026-10-11': '國慶日(補假)',
-};
-
-const dayWorklogs: Record<number, DayWorklog[]> = {
-  2: [{ project: 'ACME-1', hours: 4, summary: '功能開發' }, { project: 'GLOBEX-5', hours: 4, summary: 'API 設計' }],
-  3: [{ project: 'ACME-1', hours: 6, summary: '功能開發' }, { project: 'ACME-12', hours: 2, summary: 'Sprint Review' }],
-  4: [{ project: 'GLOBEX-5', hours: 5, summary: 'API 測試' }, { project: 'ACME-1', hours: 3, summary: 'Code Review' }],
-  5: [{ project: 'ACME-1', hours: 4, summary: '功能開發' }, { project: 'GLOBEX-5', hours: 4, summary: 'POC 展示' }],
-  6: [{ project: 'ACME-12', hours: 3, summary: 'Sprint Planning' }, { project: 'ACME-1', hours: 5, summary: '功能開發' }],
-  9: [{ project: 'ACME-1', hours: 8, summary: '功能開發與測試' }],
-  10: [{ project: 'GLOBEX-5', hours: 4, summary: 'API 開發' }, { project: 'ACME-1', hours: 4, summary: 'Bug 修復' }],
-  11: [{ project: 'ACME-1', hours: 6, summary: '功能開發' }, { project: 'ACME-12', hours: 2, summary: 'Backlog Grooming' }],
-  12: [{ project: 'GLOBEX-5', hours: 8, summary: 'API 整合測試' }],
-  13: [{ project: 'ACME-1', hours: 4, summary: '功能開發' }, { project: 'GLOBEX-5', hours: 4, summary: '文件撰寫' }],
-  16: [{ project: 'ACME-1', hours: 8, summary: '功能開發' }],
-  17: [{ project: 'GLOBEX-5', hours: 5, summary: 'API Review' }, { project: 'ACME-1', hours: 3, summary: 'Code Review' }],
-  18: [{ project: 'ACME-1', hours: 8, summary: '功能開發與測試' }],
-  19: [{ project: 'ACME-12', hours: 2, summary: 'Sprint Review' }, { project: 'ACME-1', hours: 6, summary: '功能開發' }],
-  20: [{ project: 'ACME-1', hours: 4, summary: '功能開發' }, { project: 'GLOBEX-5', hours: 4, summary: 'API 文件' }],
-  23: [{ project: 'ACME-1', hours: 8, summary: '功能開發' }],
-  24: [{ project: 'GLOBEX-5', hours: 4, summary: 'API 開發' }, { project: 'ACME-1', hours: 4, summary: 'Bug 修復' }],
-  25: [{ project: 'ACME-1', hours: 6, summary: '功能開發' }, { project: 'ACME-12', hours: 2, summary: 'Backlog Grooming' }],
 };
 
 function taipeiDateKey(date = new Date()): string {
@@ -122,10 +94,7 @@ function draftWorklogsForDate(dateKey: string, drafts: Draft[]): DayWorklog[] {
 }
 
 function worklogsForDate(dateKey: string, drafts: Draft[]): DayWorklog[] {
-  const draftsForDate = draftWorklogsForDate(dateKey, drafts);
-  if (draftsForDate.length) return draftsForDate;
-  if (dateKey.startsWith('2026-11-')) return dayWorklogs[Number(dateKey.slice(-2))] ?? [];
-  return [];
+  return draftWorklogsForDate(dateKey, drafts);
 }
 
 function getMonthGrid(dateKey: string, drafts: Draft[]) {
@@ -196,7 +165,7 @@ function Worklogs() {
   const [jiraBusy, setJiraBusy] = useState(false);
   const [jiraSubmitting, setJiraSubmitting] = useState(false);
   const totalHours = selectedDayHours;
-  const hasUnresolvedIssue = drafts.some((draft) => !draft.issueKey && !(draft.projectKey && draft.newIssueSummary && draft.createNewIssue));
+  const hasUnresolvedIssue = selectedDrafts.some((draft) => !draft.issueKey && !(draft.projectKey && draft.newIssueSummary));
 
   useEffect(() => {
     let cancelled = false;
@@ -218,9 +187,9 @@ function Worklogs() {
         const valid = Array.isArray(parsed) && parsed.every((draft) =>
           Number.isInteger(draft.id) && typeof draft.summary === 'string' && typeof draft.hours === 'number'
           && typeof draft.started === 'string' && typeof draft.source === 'string');
-        setDrafts(valid ? parsed : initialDrafts);
+        setDrafts(valid ? parsed : []);
       } catch {
-        setDrafts(initialDrafts);
+        setDrafts([]);
       }
       setDraftsLoaded(true);
     };
@@ -457,28 +426,33 @@ function Worklogs() {
 
   const addManualDraft = () => {
     const hours = Number(manualHours);
-    if (!selectedProjectKey || (!manualIssueKey && !manualNewIssueSummary) || !manualSummary.trim() || !Number.isFinite(hours) || hours <= 0) {
+    const newIssueSummary = manualNewIssueSummary || (!manualIssueKey && manualIssueOptions.length === 0 ? manualSummary.trim() : '');
+    if (!selectedProjectKey || (!manualIssueKey && !newIssueSummary) || !manualSummary.trim() || !Number.isFinite(hours) || hours <= 0) {
       setMessage('手動補登請選擇專案與票卡，並填寫內容及有效時數。');
       return;
     }
-    setDrafts((current) => [...current, { id: Date.now(), project: manualIssueKey || '待建立票卡', projectKey: selectedProjectKey, issueKey: manualIssueKey || undefined, newIssueSummary: manualNewIssueSummary || undefined, createNewIssue: Boolean(manualNewIssueSummary), started: new Date(`${selectedDate}T12:00:00+08:00`).toISOString(), hours, summary: manualSummary.trim(), source: '手動補登' }]);
+    setDrafts((current) => [...current, { id: Date.now(), project: manualIssueKey || '待建立票卡', projectKey: selectedProjectKey, issueKey: manualIssueKey || undefined, newIssueSummary: newIssueSummary || undefined, createNewIssue: Boolean(newIssueSummary), started: new Date(`${selectedDate}T12:00:00+08:00`).toISOString(), hours, summary: manualSummary.trim(), source: '手動補登' }]);
     setManualSummary(''); setManualHours('1'); setManualIssueKey(''); setManualNewIssueSummary('');
     setMessage('手動工時已加入草稿。');
   };
 
   const submitWorklogs = async () => {
+    if (!selectedDrafts.length) {
+      setMessage('所選日期沒有待送出的工時草稿。');
+      return;
+    }
     if (!jiraConnected || !selectedCloudId) {
       setMessage('請先連接 Jira 並選擇 Jira 網站。');
       return;
     }
-    if (drafts.some((draft) => !draft.issueKey && !(draft.projectKey && draft.newIssueSummary && draft.createNewIssue))) {
+    if (selectedDrafts.some((draft) => !draft.issueKey && !(draft.projectKey && draft.newIssueSummary))) {
       setMessage('每筆草稿都要先選擇既有票卡或指定待建立的新票卡。');
       return;
     }
     setJiraSubmitting(true);
     try {
       const resolvedDrafts: Draft[] = [];
-      for (const draft of drafts) {
+      for (const draft of selectedDrafts) {
         if (draft.issueKey) { resolvedDrafts.push(draft); continue; }
         const key = await createJiraIssue(draft.projectKey!, draft.newIssueSummary!);
         if (!key) {
@@ -568,7 +542,7 @@ function Worklogs() {
       setDrafts((current) => current.map((draft) => {
         const match = matches.get(draft.id);
         if (!match) return draft;
-        return { ...draft, projectKey: match.projectKey || undefined, issueKey: match.issueKey ?? undefined, newIssueSummary: match.newIssueSummary ?? undefined, project: match.issueKey ?? '待選票卡' };
+        return { ...draft, projectKey: match.projectKey || undefined, issueKey: match.issueKey ?? undefined, newIssueSummary: match.newIssueSummary ?? undefined, createNewIssue: Boolean(match.newIssueSummary), project: match.issueKey ?? '待選票卡' };
       }));
       setMessage(result.status === 'ready' ? 'AI 已完成配對建議，請確認專案與票卡；待新增票卡會在按「確認送出」時建立。' : '已加入草稿，但 AI 尚未設定，請手動選專案與票卡。');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'AI 比對失敗，請手動選擇專案與票卡。'); }
@@ -752,18 +726,18 @@ function Worklogs() {
                 <option value="">選擇專案</option>
                 {jiraProjects.map((project) => <option value={project.key} key={project.id}>{project.key}・{project.name}</option>)}
               </select>
-              <select aria-label="手動補登票卡" value={manualIssueKey || (manualNewIssueSummary ? '__create_new__' : '')} onChange={(event) => {
+              <select aria-label="手動補登票卡" value={manualIssueKey || (manualNewIssueSummary || (manualSummary.trim() && manualIssueOptions.length === 0 ? '__create_new__' : '') ? '__create_new__' : '')} onChange={(event) => {
                 if (event.target.value === '__create_new__' && selectedProjectKey && manualSummary.trim()) {
                   setManualIssueKey(''); setManualNewIssueSummary(manualSummary.trim());
                 } else { setManualIssueKey(event.target.value); setManualNewIssueSummary(''); }
               }} disabled={!selectedProjectKey || !jiraConnected || jiraBusy}>
-                <option value="">{!selectedProjectKey ? '先選擇專案' : manualIssueOptions.length ? '選擇票卡' : '輸入內容以搜尋票卡'}</option>
+                <option value="">{!selectedProjectKey ? '先選擇專案' : manualIssueOptions.length ? '選擇票卡' : manualSummary.trim() ? '沒有相符票卡，將建立新票卡' : '輸入內容以搜尋票卡'}</option>
                 {manualIssueOptions.map((issue) => <option value={issue.key} key={issue.id}>{issue.key}・{issue.summary}</option>)}
-                {manualSummary.trim() && selectedProjectKey && <option value="__create_new__">＋ 待新增「{manualNewIssueSummary || manualSummary.trim()}」</option>}
+                {manualSummary.trim() && selectedProjectKey && <option value="__create_new__">＋ 建立新票卡「{manualNewIssueSummary || manualSummary.trim()}」</option>}
               </select>
               <input aria-label="手動補登內容" value={manualSummary} onChange={(event) => { setManualSummary(event.target.value); setManualIssueKey(''); setManualNewIssueSummary(''); }} placeholder="工時內容" />
               <label className="manual-hours-field"><input aria-label="手動補登時數" type="number" min="0.25" max="24" step="0.25" value={manualHours} onChange={(event) => setManualHours(event.target.value)} /><span>小時</span></label>
-              <button className="button button-primary manual-add-button" type="button" onClick={addManualDraft} disabled={jiraSubmitting || !manualSummary.trim() || (!manualIssueKey && !manualNewIssueSummary)}>加入草稿</button>
+              <button className="button button-primary manual-add-button" type="button" onClick={addManualDraft} disabled={jiraSubmitting || !manualSummary.trim() || (!manualIssueKey && !manualNewIssueSummary && manualIssueOptions.length > 0)}>加入草稿</button>
             </div>
           </div>
         </section>
@@ -931,14 +905,14 @@ function Worklogs() {
         <div className="sticky-submit-inner">
           <span className="draft-security"><CheckCheck size={15} />確認前不會寫入 Jira</span>
           <div className="sticky-submit-right">
-            <span className="sticky-total">{drafts.length} 筆・<strong>{totalHours}h</strong></span>
-            <button className="button button-primary" type="button" disabled={!drafts.length} onClick={() => setShowConfirm(true)}>確認送出 <ArrowRight size={16} /></button>
+            <span className="sticky-total">{selectedDrafts.length} 筆・<strong>{totalHours}h</strong></span>
+            <button className="button button-primary" type="button" disabled={!selectedDrafts.length} onClick={() => setShowConfirm(true)}>確認送出 <ArrowRight size={16} /></button>
           </div>
         </div>
       </div>
 
       {message && <div className="toast-message" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="關閉">×</button></div>}
-      {showConfirm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><span className="modal-icon"><AlertTriangle size={21} /></span><h2 id="confirm-title">{!jiraConnected ? '請先連接 Jira' : !selectedCloudId ? '請選擇 Jira 網站' : hasUnresolvedIssue ? '還有票卡待選' : '確認寫入 Jira 工時'}</h2><p>{!jiraConnected ? '連接 Jira 後才能送出工時。' : !selectedCloudId ? '選擇要寫入的 Jira 測試或正式網站。' : hasUnresolvedIssue ? '請先為每筆草稿選擇專案與既有票卡，或選擇待新增票卡。' : drafts.some((draft) => draft.createNewIssue) ? '確認後才會建立你選取的新票卡，並寫入這些草稿的工時。' : '確認後，以下草稿會以目前選取的 Jira 網站與票卡建立工時紀錄。'}</p><div className="modal-summary"><span>目前草稿</span><strong>{drafts.length} 筆・{totalHours} 小時</strong></div><div className="modal-actions"><button className="button button-secondary modal-close" type="button" onClick={() => setShowConfirm(false)}>返回檢查</button>{jiraConnected && selectedCloudId && !hasUnresolvedIssue && <button className="button button-primary modal-close" type="button" onClick={() => void submitWorklogs()} disabled={jiraSubmitting}>{jiraSubmitting ? '正在寫入…' : '確認寫入 Jira'}</button>}</div></section></div>}
+      {showConfirm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><span className="modal-icon"><AlertTriangle size={21} /></span><h2 id="confirm-title">{!jiraConnected ? '請先連接 Jira' : !selectedCloudId ? '請選擇 Jira 網站' : hasUnresolvedIssue ? '還有票卡待選' : '確認寫入 Jira 工時'}</h2><p>{!jiraConnected ? '連接 Jira 後才能送出工時。' : !selectedCloudId ? '選擇要寫入的 Jira 測試或正式網站。' : hasUnresolvedIssue ? '請先為所選日期的每筆草稿選擇專案與既有票卡，或選擇待新增票卡。' : selectedDrafts.some((draft) => draft.newIssueSummary) ? '確認後才會建立你選取的新票卡，並寫入這些草稿的工時。' : '確認後，以下草稿會以目前選取的 Jira 網站與票卡建立工時紀錄。'}</p><div className="modal-summary"><span>目前草稿</span><strong>{selectedDrafts.length} 筆・{totalHours} 小時</strong></div><div className="modal-actions"><button className="button button-secondary modal-close" type="button" onClick={() => setShowConfirm(false)}>返回檢查</button>{jiraConnected && selectedCloudId && !hasUnresolvedIssue && <button className="button button-primary modal-close" type="button" onClick={() => void submitWorklogs()} disabled={jiraSubmitting}>{jiraSubmitting ? '正在寫入…' : '確認寫入 Jira'}</button>}</div></section></div>}
       <div className="preview-footnote">草稿送出前須選擇 Jira 票卡，並經你確認後才會寫入 Jira。</div>
     </div>
   );

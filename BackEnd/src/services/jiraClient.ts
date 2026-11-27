@@ -83,18 +83,21 @@ export async function getAccessibleJiraSites(userId: string): Promise<{ sites: J
   return { sites: sites.filter((site) => site.scopes?.some((scope) => scope.includes('jira'))), connection };
 }
 
-export async function jiraApi(userId: string, path: string, init: RequestInit = {}): Promise<unknown> {
+export async function jiraApi(userId: string, path: string, init: RequestInit = {}, expectedCloudId?: string): Promise<unknown> {
   let connection = await validConnection(userId);
   if (!connection.selectedCloudId) throw new JiraRequestError(409, 'Choose a Jira site first');
   if (!/^[a-zA-Z0-9-]{8,80}$/.test(connection.selectedCloudId)) throw new JiraRequestError(400, 'Invalid Jira site id');
 
-  const request = (accessToken: string) => fetch(`https://api.atlassian.com/ex/jira/${connection.selectedCloudId}${path}`, {
+  const cloudId = connection.selectedCloudId;
+  if (expectedCloudId !== undefined && expectedCloudId !== cloudId) throw new JiraRequestError(409, 'The selected Jira site changed');
+  const request = (accessToken: string) => fetch(`https://api.atlassian.com/ex/jira/${cloudId}${path}`, {
     ...init,
     headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.headers, authorization: `Bearer ${accessToken}` },
   });
   let response = await request(connection.accessToken);
   if (response.status === 401) {
     connection = await validConnection(userId, true);
+    if (connection.selectedCloudId !== cloudId) throw new JiraRequestError(409, 'The selected Jira site changed');
     response = await request(connection.accessToken);
   }
   const raw = await response.text();

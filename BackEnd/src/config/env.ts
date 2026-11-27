@@ -26,7 +26,7 @@ export const env = {
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   authCookieSecret: process.env.AUTH_COOKIE_SECRET ?? '',
   bedrockRegion: process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? '',
-  bedrockModelId: process.env.BEDROCK_MODEL_ID ?? '',
+  bedrockPromptArn: process.env.BEDROCK_PROMPT_ARN ?? '',
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
   geminiModelId: process.env.GEMINI_MODEL_ID ?? 'gemini-3.8-flash',
   googleChatServiceAccountJson: process.env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON ?? '',

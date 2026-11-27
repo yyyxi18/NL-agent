@@ -20,7 +20,7 @@ NL-agent 是一個整合工程工作流程的網站。本期以 Jira 工時紀�
 | Jira 工時紀錄 | Calendar 行程建議、手動補登、草稿調整、Jira 配對與使用者確認流程 |
 | 結案報告製作、SOW 撰寫 | 導覽與待開發頁面 |
 | 後端 API | Express API，支援本機及 AWS Lambda API 部署 |
-| 登入與外部整合 | Google 登入、Calendar OAuth、Jira OAuth／API、Gemini 分類與本機 Google Chat 提醒排程 |
+| 登入與外部整合 | Google 登入、Calendar OAuth、Jira OAuth／API、Gemini 行程分類與 Jira 配對、本機 Google Chat 提醒排程 |
 
 ## 技術架構
 
@@ -32,7 +32,7 @@ flowchart LR
   API --> Health[GET /api/v1/health]
   API --> Jira[Jira Cloud]
   API --> Google[Google OAuth / Calendar]
-  API --> Gemini[Gemini 分類]
+  API --> Gemini[Gemini 行程分類]
   LocalScheduler[本機 16:30 排程] --> Chat[Google Chat 私訊]
 ```
 
@@ -50,7 +50,7 @@ flowchart LR
   Web --> API[API Gateway + Lambda]
   API --> Auth[Google OIDC / Session]
   API --> Agent[受控解析流程]
-  Agent --> Bedrock[Amazon Bedrock]
+  Agent --> Gemini[Google Gemini]
   API --> Jira[Jira Cloud API]
   API --> Calendar[Google Calendar API 唯讀]
   API --> DB[DynamoDB]
